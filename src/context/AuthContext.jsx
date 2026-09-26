@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from 'react';
-import { loginUser } from '../api/auth';
+import { loginUser, getCurrentUser } from '../api/auth';
 
 const AuthContext = createContext(null);
 
@@ -7,35 +7,41 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore authentication when the app starts
+  // Restore logged-in user when the app starts
   useEffect(() => {
-    try {
-      const token = localStorage.getItem('token');
-      const storedUser = localStorage.getItem('user');
+    const restoreAuth = async () => {
+      try {
+        const token = localStorage.getItem('token');
 
-      if (token && storedUser) {
-        try {
-          const parsedUser = JSON.parse(storedUser);
-          setUser(parsedUser);
-        } catch (error) {
-          console.error('Invalid stored user data. Clearing auth data.');
-
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-
+        if (!token) {
           setUser(null);
+          return;
         }
+
+        const response = await getCurrentUser();
+
+        console.log('CURRENT USER RESPONSE:', response);
+
+        const userData = response?.data;
+
+        if (!userData) {
+          throw new Error('Unable to retrieve current user.');
+        }
+
+        localStorage.setItem('user', JSON.stringify(userData));
+        setUser(userData);
+      } catch (error) {
+        console.error('Failed to restore authentication:', error);
+
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error('Failed to restore authentication:', error);
+    };
 
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
+    restoreAuth();
   }, []);
 
   // Login
@@ -48,55 +54,60 @@ export function AuthProvider({ children }) {
     console.log('LOGIN RESPONSE:', response);
 
     /*
-      Your backend should normally return something similar to:
+      Expected backend response is something similar to:
 
       {
-        token: "...",
-        user: {
-          id: "...",
-          name: "...",
-          email: "..."
+        success: true,
+        data: {
+          token: "...",
+          ...
         }
       }
 
-      This also supports common alternatives such as
-      accessToken or nested data.
+      or:
+
+      {
+        success: true,
+        token: "..."
+      }
     */
 
     const token =
       response?.token ||
-      response?.accessToken ||
-      response?.data?.token ||
-      response?.data?.accessToken;
-
-    const userData =
-      response?.user ||
-      response?.data?.user;
+      response?.data?.token;
 
     if (!token) {
-      console.error('Login response does not contain a token:', response);
+      console.error('Invalid login response:', response);
       throw new Error('Invalid login response from server.');
     }
 
-    // Store token
+    // Store JWT first because /auth/me needs it
     localStorage.setItem('token', token);
 
-    // Store user if backend returned it
-    if (userData) {
-      localStorage.setItem('user', JSON.stringify(userData));
-      setUser(userData);
-    } else {
-      // Still consider the user authenticated
-      // even if backend does not return user information.
-      const fallbackUser = {
-        email,
-      };
+    // Now retrieve the complete user from MongoDB
+    const currentUserResponse = await getCurrentUser();
 
-      localStorage.setItem('user', JSON.stringify(fallbackUser));
-      setUser(fallbackUser);
+    console.log(
+      'CURRENT USER AFTER LOGIN:',
+      currentUserResponse
+    );
+
+    const userData = currentUserResponse?.data;
+
+    if (!userData) {
+      localStorage.removeItem('token');
+      throw new Error('Unable to retrieve user information.');
     }
 
-    return response;
+    // Store complete user information
+    localStorage.setItem(
+      'user',
+      JSON.stringify(userData)
+    );
+
+    setUser(userData);
+
+    return userData;
   };
 
   // Logout

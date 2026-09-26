@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 
 function Dashboard() {
   const { user, logout } = useAuth();
+  console.log('DASHBOARD USER:', user);
 
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
