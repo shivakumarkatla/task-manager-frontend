@@ -166,7 +166,7 @@ function Login() {
           Don't have an account?{' '}
 
           <Link
-            to="/signup"
+            to="/register"
             className="font-medium text-gray-900 underline"
           >
             Sign up
